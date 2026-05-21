@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐙 Octopus Copy Editor</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d0d2b; color: #e0e0f0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* CORS banner */
+#cors-banner { background: #1a0a2e; border-bottom: 2px solid #7c3aed; padding: 8px 16px; display: flex; align-items: center; gap: 12px; font-size: 12px; color: #c0a0ff; flex-shrink: 0; }
+#cors-banner strong { color: #ff69b4; }
+#cors-banner code { background: #0d0d2b; padding: 2px 8px; border-radius: 4px; font-size: 11px; color: #88ffcc; border: 1px solid #2a2a5a; cursor: pointer; user-select: all; }
+#cors-banner .close-banner { margin-left: auto; cursor: pointer; color: #555; font-size: 16px; line-height: 1; }
+#cors-banner .close-banner:hover { color: #fff; }
+
+/* Toolbar */
+#toolbar { background: #1a1a3e; border-bottom: 2px solid #ff1f8e; padding: 8px 14px; display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+.logo { font-size: 14px; font-weight: 800; color: #ff69b4; white-space: nowrap; margin-right: 4px; }
+.page-btn { padding: 5px 10px; border: 1px solid #3a2a6e; border-radius: 20px; background: #1e1e4e; color: #aaa; cursor: pointer; font-size: 11px; font-weight: 500; transition: all 0.15s; white-space: nowrap; position: relative; }
+.page-btn:hover { background: #2a2a6e; color: #fff; border-color: #7c3aed; }
+.page-btn.active { background: #7c3aed; color: #fff; border-color: #7c3aed; font-weight: 700; }
+.page-btn .dot { position: absolute; top: 2px; right: 4px; width: 6px; height: 6px; background: #ff1f8e; border-radius: 50%; display: none; }
+.page-btn.has-changes .dot { display: block; }
+.sep { width: 1px; height: 20px; background: #2a2a5a; flex-shrink: 0; }
+.tbtn { padding: 5px 12px; border: none; border-radius: 5px; cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.tbtn-pink { background: #ff1f8e; color: white; }
+.tbtn-purple { background: #7c3aed; color: white; }
+.tbtn-gray { background: #2a2a5e; color: #aaa; border: 1px solid #444; }
+.tbtn-red { background: #c0392b; color: white; }
+.tbtn-green { background: #1db954; color: white; }
+#change-counter { font-size: 11px; color: #ff69b4; font-weight: 600; margin-left: auto; white-space: nowrap; }
+
+/* Status bar */
+#status-bar { background: #111130; border-bottom: 1px solid #1a1a3a; padding: 4px 16px; font-size: 11px; color: #555; display: flex; gap: 16px; flex-shrink: 0; }
+#status-bar strong { color: #7c3aed; }
+#sb-tip { margin-left: auto; color: #ff69b4; }
+
+/* Main area */
+#frame-wrap { flex: 1; position: relative; overflow: hidden; }
+#loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #ff69b4; z-index: 10; }
+.spinner { width: 40px; height: 40px; border: 3px solid #2a2a5a; border-top-color: #ff69b4; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading p { font-size: 13px; color: #888; }
+#page-frame { width: 100%; height: 100%; border: none; display: none; }
+
+/* Export side panel */
+#export-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 480px; background: #1a1a3e; border-left: 2px solid #7c3aed; z-index: 9999; display: none; flex-direction: column; }
+#export-panel.open { display: flex; }
+#export-header { padding: 14px 16px; border-bottom: 1px solid #2a2a5a; display: flex; justify-content: space-between; align-items: center; }
+#export-header h3 { color: #ff69b4; font-size: 16px; }
+#export-tabs { display: flex; border-bottom: 1px solid #2a2a5a; }
+.etab { flex: 1; padding: 9px; text-align: center; cursor: pointer; background: #111128; color: #666; border: none; font-size: 12px; font-weight: 600; transition: all 0.15s; }
+.etab.active { background: #1a1a3e; color: #ff69b4; border-bottom: 2px solid #ff1f8e; }
+#export-content { flex: 1; padding: 12px; overflow: auto; }
+#export-textarea { width: 100%; height: calc(100% - 44px); background: #0d0d2b; color: #88ffcc; border: 1px solid #2a2a5a; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; resize: none; }
+#export-actions { padding: 10px 14px; border-top: 1px solid #2a2a5a; display: flex; gap: 8px; }
+#export-actions button { flex: 1; padding: 8px; border: none; border-radius: 6px; cursor: pointer; font-weight: 700; font-size: 12px; }
+#btn-copy { background: #7c3aed; color: white; }
+#btn-download { background: #1db954; color: white; }
+</style>
+</head>
+<body>
+
+<div id="cors-banner">
+  <strong>⚠️ CORS:</strong>
+  Para que el editor funcione, abre Chrome con seguridad desactivada. Copia y ejecuta en PowerShell:
+  <code id="chrome-cmd">Start-Process "chrome" "--disable-web-security --user-data-dir=$env:TEMP\chrome-octo --disable-site-isolation-trials"</code>
+  <span style="color:#555;font-size:11px">Luego abre este archivo desde ese Chrome.</span>
+  <span class="close-banner" onclick="document.getElementById('cors-banner').style.display='none'">×</span>
+</div>
+
+<div id="toolbar">
+  <span class="logo">🐙 Copy Editor</span>
+  <div class="sep"></div>
+  <button class="page-btn" data-url="https://octopusenergy.es/" data-key="home">🏠 Home<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/precios" data-key="precios">💡 Tarifas Luz<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/precios/tarifa-solar" data-key="tarifa-solar">☀️ Tarifa Solar<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/solar" data-key="solar">🌞 Solar<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/bateria-para-placas-solares" data-key="baterias">🔋 Baterías<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/solar-wallet" data-key="solar-wallet">💰 Solar Wallet<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/cargador-coche-electrico" data-key="cargador">🚗 Cargadores<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/tarifas-coche-electrico" data-key="tarifas-ev">⚡ Tarifas EV<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/aerotermia" data-key="aerotermia">🌡️ Aerotermia<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/solar-autoconsumo-industrial" data-key="empresas">🏭 Empresas<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/sobre-nosotros" data-key="sobre">🐙 Sobre Nosotros<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/nuestra-energia-verde" data-key="verde">🌱 Energía Verde<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/optimizar-potencia" data-key="potencia">🔌 Potencia<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/precio-luz-hoy" data-key="precio-luz">📊 Precio Luz<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/universo-energetico-octopus" data-key="universo">🌌 Universo<span class="dot"></span></button>
+  <button class="page-btn" data-url="https://octopusenergy.es/contacto" data-key="contacto">📞 Contacto<span class="dot"></span></button>
+  <div class="sep"></div>
+  <button class="tbtn tbtn-pink" id="btn-highlight">🎯 Ver textos</button>
+  <button class="tbtn tbtn-gray" id="btn-reset-page">↩ Reset página</button>
+  <button class="tbtn tbtn-purple" id="btn-export">📋 Exportar</button>
+  <button class="tbtn tbtn-green" id="btn-save">⬇️ Guardar</button>
+  <span id="change-counter"></span>
+</div>
+
+<div id="status-bar">
+  <span>Página: <strong id="sb-page">—</strong></span>
+  <span>Bloques: <strong id="sb-blocks">—</strong></span>
+  <span>Cambios aquí: <strong id="sb-changes">0</strong></span>
+  <span>Total: <strong id="sb-total">0</strong></span>
+  <span id="sb-tip">Selecciona una página para comenzar</span>
+</div>
+
+<div id="frame-wrap">
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Selecciona una página arriba</p>
+  </div>
+  <iframe id="page-frame" sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
+</div>
+
+<div id="export-panel">
+  <div id="export-header">
+    <h3>📋 Exportar copy</h3>
+    <button class="tbtn tbtn-gray" id="btn-close-export">✕ Cerrar</button>
+  </div>
+  <div id="export-tabs">
+    <button class="etab active" data-tab="current">Página actual</button>
+    <button class="etab" data-tab="all">Todas</button>
+    <button class="etab" data-tab="changes">Solo cambios</button>
+  </div>
+  <div id="export-content">
+    <textarea id="export-textarea" readonly placeholder="Los cambios aparecerán aquí..."></textarea>
+  </div>
+  <div id="export-actions">
+    <button id="btn-copy">📋 Copiar</button>
+    <button id="btn-download">⬇️ Descargar JSON</button>
+  </div>
+</div>
+
+<script>
+const frame = document.getElementById('page-frame');
+const loading = document.getElementById('loading');
+let allChanges = {};
+let currentPageKey = null;
+let currentPageBtn = null;
+let currentExportTab = 'current';
+
+const INJECT = `
+(function(){
+  if(window.__octoInjected) return;
+  window.__octoInjected = true;
+
+  const style = document.createElement('style');
+  style.textContent = \`
+    [data-octo] { cursor: text !important; }
+    [data-octo]:hover { outline: 2px dashed rgba(255,105,180,0.6) !important; outline-offset: 1px; }
+    [data-octo]:focus { outline: 2px solid #ff1f8e !important; background: rgba(255,31,142,0.07) !important; }
+    [data-octo].modified { outline: 2px solid #ff1f8e !important; background: rgba(255,31,142,0.1) !important; border-left: 3px solid #ff1f8e !important; padding-left: 4px !important; }
+    [data-octo].highlighted { outline: 2px dashed #ff69b4 !important; background: rgba(255,105,180,0.12) !important; }
+  \`;
+  document.head.appendChild(style);
+
+  const skip = new Set(['SCRIPT','STYLE','NOSCRIPT','IFRAME','INPUT','TEXTAREA','SELECT','IMG','SVG','HEAD']);
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const t = node.textContent.trim();
+      if (!t || t.length < 3 || t.length > 600) return NodeFilter.FILTER_REJECT;
+      const p = node.parentElement;
+      if (!p || skip.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+      if (window.getComputedStyle(p).display === 'none') return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+
+  const nodes = new Map();
+  let idx = 0;
+  while (walker.nextNode()) {
+    const el = walker.currentNode.parentElement;
+    if (nodes.has(el)) continue;
+    const orig = el.innerText.trim();
+    if (!orig) continue;
+    const id = 'octo_' + idx++;
+    el.setAttribute('data-octo', id);
+    el.setAttribute('data-orig', orig);
+    el.contentEditable = 'true';
+    el.spellcheck = false;
+    nodes.set(el, id);
+    el.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
+    el.addEventListener('input', function() {
+      const curr = this.innerText.trim();
+      const orig = this.getAttribute('data-orig');
+      const isModified = curr !== orig;
+      this.classList.toggle('modified', isModified);
+      window.parent.postMessage({ type: 'octo-change', id, orig, curr, isModified }, '*');
+    });
+  }
+
+  document.querySelectorAll('form').forEach(f => f.addEventListener('submit', e => e.preventDefault()));
+  document.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', e => {
+      if (e.target.hasAttribute('data-octo') || e.target.closest('[data-octo]')) e.preventDefault();
+    });
+  });
+
+  window.__octoHighlight = function(on) {
+    document.querySelectorAll('[data-octo]').forEach(el => el.classList.toggle('highlighted', on));
+  };
+
+  window.parent.postMessage({ type: 'octo-ready', count: nodes.size }, '*');
+})();
+`;
+
+function setStatus(page, blocks, changes, tip) {
+  if (page !== undefined) document.getElementById('sb-page').textContent = page;
+  if (blocks !== undefined) document.getElementById('sb-blocks').textContent = blocks;
+  if (changes !== undefined) document.getElementById('sb-changes').textContent = changes;
+  if (tip !== undefined) document.getElementById('sb-tip').textContent = tip;
+}
+
+function updateTotalCounter() {
+  const total = Object.values(allChanges).reduce((s, p) => s + Object.keys(p).length, 0);
+  document.getElementById('sb-total').textContent = total;
+  document.getElementById('change-counter').textContent = total > 0 ? '✏️ ' + total + ' cambios' : '';
+}
+
+function loadPage(btn) {
+  if (currentPageBtn) currentPageBtn.classList.remove('active');
+  btn.classList.add('active');
+  currentPageBtn = btn;
+  currentPageKey = btn.dataset.key;
+
+  setStatus(btn.textContent.replace('●','').trim(), '...', Object.keys(allChanges[currentPageKey] || {}).length, '⏳ Cargando...');
+
+  loading.style.display = 'flex';
+  loading.innerHTML = '<div class="spinner"></div><p>Cargando ' + btn.textContent.replace('●','').trim() + '...</p>';
+  frame.style.display = 'none';
+  frame.src = btn.dataset.url;
+}
+
+frame.addEventListener('load', function() {
+  loading.style.display = 'none';
+  frame.style.display = 'block';
+  setTimeout(() => {
+    try {
+      const doc = frame.contentDocument;
+      if (!doc) throw new Error('no doc');
+      frame.contentWindow.__octoPageKey = currentPageKey;
+      const s = doc.createElement('script');
+      s.textContent = INJECT;
+      doc.body.appendChild(s);
+    } catch(e) {
+      setStatus(undefined, '—', undefined, '⚠️ CORS bloqueado — sigue las instrucciones del banner superior');
+    }
+  }, 800);
+});
+
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+
+  if (e.data.type === 'octo-ready') {
+    const changes = Object.keys(allChanges[currentPageKey] || {}).length;
+    setStatus(undefined, e.data.count, changes, '💡 Haz clic en cualquier texto para editarlo');
+    updateTotalCounter();
+  }
+
+  if (e.data.type === 'octo-change') {
+    const { id, orig, curr, isModified } = e.data;
+    if (!allChanges[currentPageKey]) allChanges[currentPageKey] = {};
+    if (isModified) allChanges[currentPageKey][id] = { original: orig, current: curr };
+    else delete allChanges[currentPageKey][id];
+    const pageCount = Object.keys(allChanges[currentPageKey] || {}).length;
+    setStatus(undefined, undefined, pageCount, undefined);
+    if (currentPageBtn) currentPageBtn.classList.toggle('has-changes', pageCount > 0);
+    updateTotalCounter();
+    if (document.getElementById('export-panel').classList.contains('open')) renderExport();
+  }
+});
+
+// Toolbar buttons
+document.getElementById('btn-highlight').addEventListener('click', () => {
+  try {
+    frame.contentWindow.__octoHighlight(true);
+    setTimeout(() => frame.contentWindow.__octoHighlight(false), 3000);
+  } catch(e) {}
+});
+
+document.getElementById('btn-reset-page').addEventListener('click', () => {
+  if (!currentPageKey || !confirm('¿Resetear cambios de esta página?')) return;
+  allChanges[currentPageKey] = {};
+  if (currentPageBtn) currentPageBtn.classList.remove('has-changes');
+  setStatus(undefined, '...', 0, '↻ Recargando...');
+  updateTotalCounter();
+  loadPage(currentPageBtn);
+});
+
+document.getElementById('btn-export').addEventListener('click', () => {
+  document.getElementById('export-panel').classList.add('open');
+  renderExport();
+});
+
+document.getElementById('btn-close-export').addEventListener('click', () => {
+  document.getElementById('export-panel').classList.remove('open');
+});
+
+document.getElementById('btn-save').addEventListener('click', () => {
+  const data = {};
+  document.querySelectorAll('.page-btn').forEach(b => {
+    data[b.dataset.key] = { label: b.textContent.replace('●','').trim(), url: b.dataset.url, changes: allChanges[b.dataset.key] || {} };
+  });
+  downloadJSON(data, 'octopus-copy-all-' + today() + '.json');
+});
+
+// Export tabs
+document.querySelectorAll('.etab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.etab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentExportTab = tab.dataset.tab;
+    renderExport();
+  });
+});
+
+function renderExport() {
+  let data;
+  if (currentExportTab === 'current') {
+    data = { page: currentPageKey, url: currentPageBtn ? currentPageBtn.dataset.url : '', changes: allChanges[currentPageKey] || {} };
+  } else if (currentExportTab === 'all') {
+    data = {};
+    document.querySelectorAll('.page-btn').forEach(b => {
+      data[b.dataset.key] = { label: b.textContent.replace('●','').trim(), url: b.dataset.url, changes: allChanges[b.dataset.key] || {} };
+    });
+  } else {
+    data = {};
+    Object.entries(allChanges).forEach(([k, v]) => {
+      if (Object.keys(v).length > 0) {
+        const b = document.querySelector('[data-key="' + k + '"]');
+        data[k] = { label: b ? b.textContent.replace('●','').trim() : k, changes: v };
+      }
+    });
+    if (!Object.keys(data).length) data = { message: 'No hay cambios todavía' };
+  }
+  document.getElementById('export-textarea').value = JSON.stringify(data, null, 2);
+}
+
+document.getElementById('btn-copy').addEventListener('click', () => {
+  const ta = document.getElementById('export-textarea');
+  ta.select();
+  document.execCommand('copy');
+  document.getElementById('btn-copy').textContent = '✅ Copiado';
+  setTimeout(() => { document.getElementById('btn-copy').textContent = '📋 Copiar'; }, 2000);
+});
+
+document.getElementById('btn-download').addEventListener('click', () => {
+  downloadJSON(JSON.parse(document.getElementById('export-textarea').value), 'octopus-copy-' + currentExportTab + '-' + today() + '.json');
+});
+
+function downloadJSON(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function today() { return new Date().toISOString().slice(0, 10); }
+
+// Page buttons
+document.querySelectorAll('.page-btn').forEach(btn => {
+  btn.addEventListener('click', () => loadPage(btn));
+});
+
+// Copy Chrome command on click
+document.getElementById('chrome-cmd').addEventListener('click', function() {
+  navigator.clipboard.writeText(this.textContent).then(() => {
+    this.textContent = '✅ Copiado al portapapeles';
+    setTimeout(() => { this.textContent = 'Start-Process "chrome" "--disable-web-security --user-data-dir=$env:TEMP\\chrome-octo --disable-site-isolation-trials"'; }, 2500);
+  });
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 's') { e.preventDefault(); document.getElementById('btn-save').click(); }
+  if (e.ctrlKey && e.key === 'e') { e.preventDefault(); document.getElementById('btn-export').click(); }
+  if (e.key === 'Escape') document.getElementById('export-panel').classList.remove('open');
+});
+</script>
+</body>
+</html>
